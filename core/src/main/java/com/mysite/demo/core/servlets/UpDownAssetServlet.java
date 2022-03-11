@@ -14,20 +14,17 @@
  *  limitations under the License.
  */
 // download: [GET]
-// http://localhost:4502/bin/updownasset?assetPath=/content/dam/storageservlet/AdobeStock_1.jpg
+// http://localhost:4502/bin/updownasset?downloadPath=/content/dam/storageservlet/AdobeStock_1.jpg
 // upload: [PUT]
-// http://localhost:4502/bin/updownasset?assetPath=/content/dam/storageservlet/AdobeStock_1.jpg
+// http://localhost:4502/bin/updownasset?createVersion=true&uploadPath=/content/dam/tmp/psapi-nodejs-result.png
 
 package com.mysite.demo.core.servlets;
 
-import com.day.cq.commons.jcr.JcrConstants;
 import org.apache.sling.api.SlingHttpServletRequest;
 import org.apache.sling.api.SlingHttpServletResponse;
 import org.apache.sling.api.resource.Resource;
-import org.apache.sling.api.servlets.HttpConstants;
 import org.apache.sling.api.servlets.SlingAllMethodsServlet;
 import org.apache.sling.api.servlets.SlingSafeMethodsServlet;
-import org.apache.sling.servlets.annotations.SlingServletResourceTypes;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.propertytypes.ServiceDescription;
 
@@ -60,13 +57,22 @@ import javax.servlet.ServletOutputStream;
  * {@link SlingSafeMethodsServlet} shall be used for HTTP methods that are
  * idempotent. For write operations use the {@link SlingAllMethodsServlet}.
  */
-// @Component(service = { Servlet.class })
 @Component(service = { Servlet.class }, immediate = true, property = { "sling.servlet.paths=" + "/bin/updownasset" })
 
 @ServiceDescription("Simple Upload / Download Asset Servlet")
 public class UpDownAssetServlet extends SlingAllMethodsServlet {
 	private static final long serialVersionUID = 1L;
 	private static final Logger LOGGER = LoggerFactory.getLogger(UpDownAssetServlet.class);
+
+	private static final Map<String, String> mimeMap = Map.of(
+			"PSD", "image/vnd.adobe.photoshop",
+			"PNG", "image/png",
+			"JPG", "image/jpeg",
+			"JPEG", "image/jpeg",
+			"PDF", "application/pdf",
+			"MP4", "video/mp4",
+			"CSV", "text/csv",
+			"TXT", "text/plain");
 
 	@Reference
 	private ResourceResolverFactory resourceResolverFactory;
@@ -83,16 +89,16 @@ public class UpDownAssetServlet extends SlingAllMethodsServlet {
 			Asset imgAsset = imgRes.adaptTo(Asset.class);
 			Resource original = imgAsset.getOriginal();
 			String mimeType = imgAsset.getMimeType();
-			InputStream stream = original.adaptTo(InputStream.class);
 			long imgSize = imgAsset.getOriginal().getSize();
-			String fileName = imgAsset.getName();
 
 			/////////////////
 			resp.setContentType(mimeType != null ? mimeType : "application/octet-stream");
 			resp.setContentLength((int) imgSize);
+			// String fileName = imgAsset.getName();
 			// resp.setHeader("Content-Disposition", "attachment; filename=\"" + fileName +
 			// "\"");
 
+			InputStream stream = original.adaptTo(InputStream.class);
 			ServletOutputStream os = resp.getOutputStream();
 			byte[] bufferData = new byte[1024];
 			int read = 0;
@@ -118,7 +124,7 @@ public class UpDownAssetServlet extends SlingAllMethodsServlet {
 			throws ServletException, IOException {
 		try {
 			LOGGER.info(" == START Asset upload ==");
-			// 'https://demo.cqsvr.com/bin/updownasset?createVersion=true&uploadPath=/content/dam/tmp/psapi-nodejs-result.png')
+			// 'http://localhost:4502/bin/updownasset?createVersion=true&uploadPath=/content/dam/tmp/psapi-nodejs-result.png')
 			String uploadPath = request.getParameter("uploadPath");
 			boolean createVersion = Boolean.valueOf(request.getParameter("createVersion"));
 			LOGGER.info(" upload path ==> " + uploadPath);
@@ -129,6 +135,7 @@ public class UpDownAssetServlet extends SlingAllMethodsServlet {
 			ValueFactory factory = session.getValueFactory();
 			Binary binary = factory.createBinary(request.getInputStream());
 			LOGGER.info(" binary size ==> " + binary.getSize() + " ");
+
 			// ==== MIME TYPE GENERATOR ====
 			// PNG, GIF, TIFF, JPEG, BMP,
 			// PSD , image/vnd.adobe.photoshop
@@ -138,16 +145,6 @@ public class UpDownAssetServlet extends SlingAllMethodsServlet {
 			// MP4, video/mp4
 			// csv, text/csv
 			// txt, text/pain
-			Map<String, String> mimeMap = Map.of(
-					"PSD", "image/vnd.adobe.photoshop",
-					"PNG", "image/png",
-					"JPG", "image/jpeg",
-					"JPEG", "image/jpeg",
-					"PDF", "application/pdf",
-					"MP4", "video/mp4",
-					"CSV", "text/csv",
-					"TXT", "text/plain");
-
 			String extension = uploadPath.substring(uploadPath.lastIndexOf(".") + 1).toUpperCase();
 			String mimeType = mimeMap.get(extension);
 
