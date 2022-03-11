@@ -13,6 +13,11 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+// download: [GET]
+// http://localhost:4502/bin/updownasset?assetPath=/content/dam/storageservlet/AdobeStock_1.jpg
+// upload: [PUT]
+// http://localhost:4502/bin/updownasset?assetPath=/content/dam/storageservlet/AdobeStock_1.jpg
+
 package com.mysite.demo.core.servlets;
 
 import com.day.cq.commons.jcr.JcrConstants;
@@ -45,6 +50,8 @@ import javax.jcr.ValueFactory;
 
 import com.day.cq.dam.api.Asset;
 import java.io.InputStream;
+import java.util.Map;
+
 import javax.servlet.ServletOutputStream;
 
 /**
@@ -54,12 +61,12 @@ import javax.servlet.ServletOutputStream;
  * idempotent. For write operations use the {@link SlingAllMethodsServlet}.
  */
 // @Component(service = { Servlet.class })
-@Component(service = { Servlet.class }, immediate = true, property = { "sling.servlet.paths=" + "/bin/downloadasset" })
+@Component(service = { Servlet.class }, immediate = true, property = { "sling.servlet.paths=" + "/bin/updownasset" })
 
-@ServiceDescription("Simple Download Asset Servlet")
-public class DownloadAssetServlet extends SlingAllMethodsServlet {
+@ServiceDescription("Simple Upload / Download Asset Servlet")
+public class UpDownAssetServlet extends SlingAllMethodsServlet {
 	private static final long serialVersionUID = 1L;
-	private static final Logger LOGGER = LoggerFactory.getLogger(DownloadAssetServlet.class);
+	private static final Logger LOGGER = LoggerFactory.getLogger(UpDownAssetServlet.class);
 
 	@Reference
 	private ResourceResolverFactory resourceResolverFactory;
@@ -67,44 +74,42 @@ public class DownloadAssetServlet extends SlingAllMethodsServlet {
 	@Override
 	protected void doGet(final SlingHttpServletRequest req,
 			final SlingHttpServletResponse resp) throws ServletException, IOException {
-		final Resource resource = req.getResource();
 
-		ResourceResolver resourceResolver = req.getResourceResolver();
+		try (ResourceResolver resourceResolver = getResourceResolver()) {
+			// ResourceResolver resourceResolver = req.getResourceResolver();
+			// assetFilePath="http://localhost:4502/bin/updownasset?downloadPath=/content/dam/storageservlet/AdobeStock_1.jpg"
+			String assetFilePath = req.getParameter("downloadPath");
+			Resource imgRes = resourceResolver.getResource(assetFilePath);
+			Asset imgAsset = imgRes.adaptTo(Asset.class);
+			Resource original = imgAsset.getOriginal();
+			String mimeType = imgAsset.getMimeType();
+			InputStream stream = original.adaptTo(InputStream.class);
+			long imgSize = imgAsset.getOriginal().getSize();
+			String fileName = imgAsset.getName();
 
-		// http://localhost:4502/bin/downloadasset?assetPath=/content/dam/storageservlet/AdobeStock_1.jpg
-		String assetFilePath = req.getParameter("assetPath");
-		// Resource imgRes =
-		// resourceResolver.getResource("/content/dam/storageservlet/AdobeStock_1.jpg");
-		Resource imgRes = resourceResolver.getResource(assetFilePath);
-		Asset imgAsset = imgRes.adaptTo(Asset.class);
-		Resource original = imgAsset.getOriginal();
-		String mimeType = imgAsset.getMimeType();
-		InputStream stream = original.adaptTo(InputStream.class);
-		long imgSize = imgAsset.getOriginal().getSize();
-		String fileName = imgAsset.getName();
-		/////////////////
-		resp.setContentType(mimeType != null ? mimeType : "application/octet-stream");
-		resp.setContentLength((int) imgSize);
-		// resp.setHeader("Content-Disposition", "attachment; filename=\"" + fileName +
-		// "\"");
+			/////////////////
+			resp.setContentType(mimeType != null ? mimeType : "application/octet-stream");
+			resp.setContentLength((int) imgSize);
+			// resp.setHeader("Content-Disposition", "attachment; filename=\"" + fileName +
+			// "\"");
 
-		ServletOutputStream os = resp.getOutputStream();
-		byte[] bufferData = new byte[1024];
-		int read = 0;
-		while ((read = stream.read(bufferData)) != -1) {
-			os.write(bufferData, 0, read);
+			ServletOutputStream os = resp.getOutputStream();
+			byte[] bufferData = new byte[1024];
+			int read = 0;
+			while ((read = stream.read(bufferData)) != -1) {
+				os.write(bufferData, 0, read);
+			}
+			os.flush();
+			os.close();
+			stream.close();
+			/////////////////
+			// resp.setContentType("text/plain");
+			// resp.getWriter().write("Message from /bin/downloaddasset servlet2");
+
+		} catch (LoginException e) {
+			e.printStackTrace();
 		}
-		os.flush();
-		os.close();
-		stream.close();
 
-		/////////////////
-		// resp.setContentType("text/plain");
-		// resp.getWriter().write("Message from getMethod in /bin/downloaddasset servlet
-		///////////////// 2");
-
-		// resp.getWriter().write("Title = " +
-		// resource.getValueMap().get(JcrConstants.JCR_TITLE));
 	}
 
 	@SuppressWarnings("all")
@@ -113,18 +118,44 @@ public class DownloadAssetServlet extends SlingAllMethodsServlet {
 			throws ServletException, IOException {
 		try {
 			LOGGER.info(" == START Asset upload ==");
-			String destinationPath = request.getParameter("destinationPath");
+			// 'https://demo.cqsvr.com/bin/updownasset?createVersion=true&uploadPath=/content/dam/tmp/psapi-nodejs-result.png')
+			String uploadPath = request.getParameter("uploadPath");
 			boolean createVersion = Boolean.valueOf(request.getParameter("createVersion"));
-			LOGGER.info(" dest path ==> " + destinationPath);
-			LOGGER.info(" cre version ==> " + createVersion);
+			LOGGER.info(" upload path ==> " + uploadPath);
+			LOGGER.info(" create version ==> " + createVersion);
 			ResourceResolver resourceResolver = getResourceResolver();
 			AssetManager assetManager = resourceResolver.adaptTo(AssetManager.class);
 			Session session = resourceResolver.adaptTo(Session.class);
 			ValueFactory factory = session.getValueFactory();
 			Binary binary = factory.createBinary(request.getInputStream());
 			LOGGER.info(" binary size ==> " + binary.getSize() + " ");
-			assetManager.createOrUpdateAsset(destinationPath, binary, "image/png", true, createVersion, "revisionLabel",
+			// ==== MIME TYPE GENERATOR ====
+			// PNG, GIF, TIFF, JPEG, BMP,
+			// PSD , image/vnd.adobe.photoshop
+			// PNG , image/png
+			// JPG, JPEG , image/jpeg
+			// PDF, application/pdf
+			// MP4, video/mp4
+			// csv, text/csv
+			// txt, text/pain
+			Map<String, String> mimeMap = Map.of(
+					"PSD", "image/vnd.adobe.photoshop",
+					"PNG", "image/png",
+					"JPG", "image/jpeg",
+					"JPEG", "image/jpeg",
+					"PDF", "application/pdf",
+					"MP4", "video/mp4",
+					"CSV", "text/csv",
+					"TXT", "text/plain");
+
+			String extension = uploadPath.substring(uploadPath.lastIndexOf(".") + 1).toUpperCase();
+			String mimeType = mimeMap.get(extension);
+
+			assetManager.createOrUpdateAsset(uploadPath, binary, mimeType, true, createVersion, "revisionLabel",
 					"revisionComment");
+			// assetManager.createOrUpdateAsset(uploadPath, binary, "image/png", true,
+			// createVersion, "revisionLabel",
+			// "revisionComment");
 			resourceResolver.commit();
 			binary.dispose();
 		} catch (Exception exception) {

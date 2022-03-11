@@ -29,6 +29,7 @@ import org.osgi.service.component.propertytypes.ServiceDescription;
 import javax.servlet.Servlet;
 import javax.servlet.ServletException;
 import java.io.IOException;
+import java.util.Map;
 
 /**
  * Servlet that writes some sample content into the response. It is mounted for
@@ -37,10 +38,7 @@ import java.io.IOException;
  * idempotent. For write operations use the {@link SlingAllMethodsServlet}.
  */
 @Component(service = { Servlet.class })
-@SlingServletResourceTypes(
-        resourceTypes="storageservlet/components/page",
-        methods=HttpConstants.METHOD_GET,
-        extensions="txt")
+@SlingServletResourceTypes(resourceTypes = "storageservlet/components/page", methods = HttpConstants.METHOD_GET, extensions = "txt")
 @ServiceDescription("Simple Demo Servlet")
 public class SimpleServlet extends SlingSafeMethodsServlet {
 
@@ -50,7 +48,8 @@ public class SimpleServlet extends SlingSafeMethodsServlet {
     protected void doGet(final SlingHttpServletRequest req,
             final SlingHttpServletResponse resp) throws ServletException, IOException {
         final Resource resource = req.getResource();
-        resp.setContentType("text/plain");
-        resp.getWriter().write("Title = " + resource.getValueMap().get(JcrConstants.JCR_TITLE));
+
+        resp.getWriter().write("Title = " +
+                resource.getValueMap().get(JcrConstants.JCR_TITLE));
     }
 }
